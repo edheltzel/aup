@@ -126,6 +126,43 @@ func TestSummaryClosesOnEnter(t *testing.T) {
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }
 
+func TestCleanRunClosesAfterDelay(t *testing.T) {
+	m := New(fixedPlan(), Options{CloseAfter: 2 * time.Second})
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 24))
+	for i := range 4 {
+		tm.Send(StartedMsg{I: i})
+		tm.Send(DoneMsg{I: i})
+	}
+	tm.Send(FinishedMsg{})
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return bytes.Contains(b, []byte("any key to stay")) })
+	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+}
+
+func TestFailedRunWaitsAndKeyStopsCountdown(t *testing.T) {
+	m := New(fixedPlan(), Options{CloseAfter: time.Second})
+	step(m, DoneMsg{I: 0, Result: runner.Result{Code: 1}}, FinishedMsg{})
+	if !m.closeAt.IsZero() {
+		t.Fatal("failed run started a countdown")
+	}
+	m = New(fixedPlan(), Options{CloseAfter: time.Second})
+	step(m, DoneMsg{I: 0}, FinishedMsg{})
+	if m.closeAt.IsZero() {
+		t.Fatal("clean run did not start a countdown")
+	}
+	if cmd := m.key(tea.KeyPressMsg{Code: 'j', Text: "j"}); cmd != nil || !m.closeAt.IsZero() {
+		t.Fatal("key did not stop the countdown")
+	}
+}
+
+func TestAutoCloseQuitsEvenAfterFailure(t *testing.T) {
+	m := New(fixedPlan(), Options{AutoClose: true})
+	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 24))
+	tm.Send(StartedMsg{I: 0})
+	tm.Send(DoneMsg{I: 0, Result: runner.Result{Code: 1}})
+	tm.Send(FinishedMsg{})
+	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+}
+
 type recorder struct {
 	mu   sync.Mutex
 	msgs []tea.Msg

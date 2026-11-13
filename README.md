@@ -10,10 +10,30 @@ Update every installed agent harness (or any tool with an update command) in one
 ## Install
 
 ```sh
+curl -fsSL https://raw.githubusercontent.com/edheltzel/aup/master/install.sh | sh
+# or
 brew install --cask edheltzel/tap/aup
 # or
 go install github.com/edheltzel/aup/cmd/aup@latest
 ```
+
+The script installs the latest release for macOS or Linux (amd64, arm64) to `~/.local/bin`, checks it against the release checksums, and writes a starter config to `~/.config/aup/config.toml` when you have none. An existing `config.toml`, legacy `harnesses.toml`, or `$AUP_CONFIG` is never touched. Set `AUP_VERSION=v0.1.0` to pin a release or `AUP_BIN_DIR` to install elsewhere. Run it again to update.
+
+Uninstall (keeps your config and log):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/edheltzel/aup/master/install.sh | sh -s -- --uninstall
+```
+
+From a clone, with [just](https://github.com/casey/just):
+
+```sh
+just install     # build to ~/.local/bin/aup (override with AUP_BIN_DIR)
+just update      # git pull, then reinstall
+just uninstall   # remove the binary
+```
+
+The config in `~/.config/aup/` and the log in `~/.local/state/aup/` are left in place by `uninstall`.
 
 ## Use
 
@@ -43,10 +63,17 @@ Looked up in this order: `--config`, `$AUP_CONFIG`, `$XDG_CONFIG_HOME/aup/config
 | `env` | no | Extra environment variables |
 | `timeout` | no | Stop the step after a duration, like `"10m"` |
 
+Top-level settings for the TUI summary:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `auto_close` | `false` | Close the TUI as soon as the run ends, failures included. The summary still prints to the terminal. |
+| `close_after` | `"10s"` | After a run with no failures, close the summary on its own after this long. `"0s"` always waits for Enter. Any key stops the countdown. |
+
 ## Develop
 
 ```sh
-go test -race ./...                              # all tests, including a PTY end-to-end run
+just test                                        # vet and all tests, including a PTY end-to-end run
 go test ./internal/tui -run TestViewGolden -update  # refresh TUI snapshots after a deliberate UI change
 ```
 

@@ -112,7 +112,8 @@ func execute(ctx context.Context, o options, stdin io.Reader, stdout, stderr io.
 	}
 	runner.ExtendPath(knownDirs(home))
 	path := config.Path(o.config, home)
-	steps, bad, err := config.Load(path)
+	cfg, bad, err := config.Load(path)
+	steps := cfg.Steps
 	if err != nil {
 		fmt.Fprintf(stderr, "aup: bad config %s: %v\n", path, err)
 		return 1
@@ -133,7 +134,7 @@ func execute(ctx context.Context, o options, stdin io.Reader, stdout, stderr io.
 		}
 	}
 	if useTUI(o, stdin, stdout) && len(plan.Tasks) > 0 {
-		return runTUI(ctx, o, plan, bad, logf, logPath, stdin, stdout, stderr, color)
+		return runTUI(ctx, o, cfg, plan, bad, logf, logPath, stdin, stdout, stderr, color)
 	}
 	return runPlain(ctx, o, plan, bad, logf, stdin, stdout, stderr, color)
 }
@@ -166,7 +167,7 @@ func runPlain(ctx context.Context, o options, plan runner.Plan, bad []config.Row
 	return exitCode(failed)
 }
 
-func runTUI(ctx context.Context, o options, plan runner.Plan, bad []config.RowError, logf *os.File, logPath string, stdin io.Reader, stdout, stderr io.Writer, color bool) int {
+func runTUI(ctx context.Context, o options, cfg config.Config, plan runner.Plan, bad []config.RowError, logf *os.File, logPath string, stdin io.Reader, stdout, stderr io.Writer, color bool) int {
 	var logOut io.Writer = io.Discard
 	if logf != nil {
 		logOut = plain.Stripper{W: logf}
@@ -177,7 +178,11 @@ func runTUI(ctx context.Context, o options, plan runner.Plan, bad []config.RowEr
 	defer abort()
 	size := &tui.Size{}
 	bridge := &tui.Bridge{Log: logger, LogOut: logOut, Size: size}
-	model := tui.New(plan, tui.Options{CancelStep: bridge.CancelStep, Abort: abort, LogPath: tilde(logPath), Size: size})
+	closeAfter := cfg.CloseAfter
+	if len(bad) > 0 {
+		closeAfter = 0
+	}
+	model := tui.New(plan, tui.Options{CancelStep: bridge.CancelStep, Abort: abort, LogPath: tilde(logPath), Size: size, AutoClose: cfg.AutoClose, CloseAfter: closeAfter})
 	prog := tea.NewProgram(model, tea.WithContext(ctx), tea.WithInput(stdin), tea.WithOutput(stdout))
 	bridge.Program = prog
 	r := &runner.Runner{DryRun: o.dry}

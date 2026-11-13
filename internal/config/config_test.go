@@ -17,8 +17,9 @@ func write(t *testing.T, body string) string {
 }
 
 func TestExampleConfigParses(t *testing.T) {
-	steps, bad, err := Load("../../examples/config.toml")
-	if err != nil || len(bad) != 0 || len(steps) != 3 {
+	cfg, bad, err := Load("../../examples/config.toml")
+	steps := cfg.Steps
+	if err != nil || len(bad) != 0 || len(steps) != 3 || cfg.AutoClose || cfg.CloseAfter != DefaultCloseAfter {
 		t.Fatalf("steps=%d bad=%v err=%v", len(steps), bad, err)
 	}
 	if steps[1].Installed != "codex" || len(steps[1].Args) != 3 || steps[1].Timeout == 0 {
@@ -31,7 +32,8 @@ func TestShippedManifestParses(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Skip("not inside the dotfiles repo")
 	}
-	steps, bad, err := Load(path)
+	cfg, bad, err := Load(path)
+	steps := cfg.Steps
 	if err != nil || len(bad) != 0 || len(steps) == 0 {
 		t.Fatalf("steps=%d bad=%v err=%v", len(steps), bad, err)
 	}
@@ -44,7 +46,8 @@ func TestShippedManifestParses(t *testing.T) {
 
 func TestStepAndLegacyTablesBothLoad(t *testing.T) {
 	p := write(t, "[[step]]\nlabel = \"New\"\ncolor = \"fff000\"\nbinary = \"a\"\ninteractive = true\ntimeout = \"2m\"\nenv = { X = \"1\" }\n[[harness]]\nlabel = \"Old\"\ncolor = \"fff000\"\nbinary = \"b\"\n")
-	steps, bad, err := Load(p)
+	cfg, bad, err := Load(p)
+	steps := cfg.Steps
 	if err != nil || len(bad) != 0 || len(steps) != 2 {
 		t.Fatalf("steps=%v bad=%v err=%v", steps, bad, err)
 	}
@@ -59,12 +62,29 @@ func TestStepAndLegacyTablesBothLoad(t *testing.T) {
 
 func TestBadFieldsAreRowErrors(t *testing.T) {
 	p := write(t, "[[step]]\nlabel = \"A\"\ncolor = \"fff000\"\nbinary = \"a\"\ntimeout = \"soon\"\n[[step]]\nlabel = \"B\"\ncolor = \"fff000\"\nbinary = \"b\"\ninteractive = \"yes\"\n[[step]]\nlabel = \"C\"\n")
-	steps, bad, err := Load(p)
+	cfg, bad, err := Load(p)
+	steps := cfg.Steps
 	if err != nil || len(steps) != 0 || len(bad) != 3 {
 		t.Fatalf("steps=%v bad=%v err=%v", steps, bad, err)
 	}
 	if bad[2].Error() != "step 3: missing color, binary" {
 		t.Fatalf("bad=%v", bad)
+	}
+}
+
+func TestCloseSettings(t *testing.T) {
+	cfg, _, err := Load(write(t, "auto_close = true\nclose_after = \"3s\"\n"))
+	if err != nil || !cfg.AutoClose || cfg.CloseAfter != 3*time.Second {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+	cfg, _, err = Load(write(t, "close_after = \"0s\"\n"))
+	if err != nil || cfg.CloseAfter != 0 {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+	for _, body := range []string{"auto_close = \"yes\"\n", "close_after = \"soon\"\n", "close_after = \"-1s\"\n"} {
+		if _, _, err := Load(write(t, body)); err == nil {
+			t.Fatalf("%q loaded without error", body)
+		}
 	}
 }
 

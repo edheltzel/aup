@@ -1,2 +1,2 @@
-(B) 2026-11-13 Add HOMEBREW_TAP_TOKEN secret (fine-grained PAT, contents write on edheltzel/homebrew-tap) to edheltzel/aup +aup id:aup-tap-token @waiting Ed creates the token
+x 2026-11-13 2026-11-13 Add HOMEBREW_TAP_TOKEN secret (fine-grained PAT, contents write on edheltzel/homebrew-tap) to edheltzel/aup +aup id:aup-tap-token @waiting Ed creates the token report:gh-secret-HOMEBREW_TAP_TOKEN
 2026-11-13 Tag v0.1.0 and confirm brew install --cask edheltzel/tap/aup works +aup id:aup-release dep:aup-tap-token

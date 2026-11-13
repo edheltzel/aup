@@ -28,7 +28,7 @@
 ## Work Guidance
 
 - After a deliberate TUI change, refresh snapshots with `go test ./internal/tui -run TestViewGolden -update` and read the diff.
-- `go install ./cmd/aup` or `go build -o ~/.local/bin/aup ./cmd/aup` for a local build.
+- `just install` builds to `~/.local/bin/aup` (override with `AUP_BIN_DIR`); `just update` pulls and reinstalls; `just uninstall` removes the binary.
 
 ## Verification
 
