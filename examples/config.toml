@@ -12,6 +12,13 @@
 # timeout      optional  stop the step after a duration, like "10m"
 #
 # Legacy [[harness]] tables are still read.
+#
+# Top-level settings for the TUI summary:
+# auto_close   optional  true closes the TUI as soon as the run ends, failures included; the summary still prints
+# close_after  optional  after a run with no failures, close the summary on its own after this long; default "10s",
+#                        "0s" always waits for Enter. Any key stops the countdown.
+
+close_after = "10s"
 
 [[step]]
 label = "Claude Code"

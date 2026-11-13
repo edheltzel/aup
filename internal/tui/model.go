@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -73,6 +74,8 @@ type Options struct {
 	LogPath    string
 	Size       *Size
 	Now        func() time.Time
+	AutoClose  bool
+	CloseAfter time.Duration
 }
 
 type Model struct {
@@ -82,8 +85,9 @@ type Model struct {
 	sel, current           int
 	follow, done, quitting bool
 	width, height          int
-	start, now             time.Time
+	start, now, closeAt    time.Time
 	spin                   spinner.Model
+	frame                  int
 	bar                    progress.Model
 	vp                     viewport.Model
 	help                   help.Model
@@ -135,9 +139,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.done {
 			return m, tick()
 		}
+		if !m.closeAt.IsZero() {
+			if !m.now.Before(m.closeAt) {
+				return m, tea.Quit
+			}
+			return m, tick()
+		}
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spin, cmd = m.spin.Update(msg)
+		if !m.done {
+			m.frame++
+		}
 		return m, cmd
 	case StartedMsg:
 		r := &m.rows[msg.I]
@@ -166,8 +179,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case FinishedMsg:
 		m.done = true
 		m.now = m.opts.Now()
-		if m.quitting {
+		if m.quitting || m.opts.AutoClose {
 			return m, tea.Quit
+		}
+		if _, bad, _, _ := m.counts(); bad == 0 && m.opts.CloseAfter > 0 {
+			m.closeAt = m.now.Add(m.opts.CloseAfter)
 		}
 		m.layout()
 	case execMsg:
@@ -185,6 +201,10 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	if m.done {
 		if key.Matches(msg, m.keys.Close) {
 			return tea.Quit
+		}
+		if !m.closeAt.IsZero() {
+			m.closeAt = time.Time{}
+			return nil
 		}
 	}
 	switch {
@@ -235,7 +255,13 @@ func (m *Model) listWidth() int {
 	return min(w, max(m.width/2, 24))
 }
 
-func (m *Model) paneHeight() int { return max(m.height-3, 6) }
+func (m *Model) paneHeight() int {
+	head := 1
+	if !m.done {
+		head = bannerRows
+	}
+	return max(m.height-head-2, 6)
+}
 
 func (m *Model) layout() {
 	body := m.paneHeight() - 3
@@ -297,8 +323,12 @@ func (m *Model) render() string {
 	ok, bad, _, finished := m.counts()
 	elapsed := m.now.Sub(m.start).Round(time.Second)
 	title := titleStyle.Render(" aup ") + " " + faint.Render("agent harness updater")
+	if !m.done {
+		title = banner(m.frame, true)
+	}
 	stat := fmt.Sprintf("%d/%d  %s", finished, m.tasks, clock(elapsed))
-	header := lipgloss.JoinHorizontal(lipgloss.Top, title, strings.Repeat(" ", max(m.width-lipgloss.Width(title)-lipgloss.Width(stat), 1)), faint.Render(stat))
+	gap := max(m.width-lipgloss.Width(title)-lipgloss.Width(stat), 1)
+	header := lipgloss.JoinHorizontal(lipgloss.Top, title, strings.Repeat(" ", gap), faint.Render(stat))
 	var body string
 	if m.done {
 		body = m.summary(ok, bad)
@@ -411,6 +441,10 @@ func (m *Model) summary(ok, bad int) string {
 	parts := []string{t.String(), " " + line}
 	if m.opts.LogPath != "" {
 		parts = append(parts, faint.Render(" log: "+m.opts.LogPath))
+	}
+	if !m.closeAt.IsZero() {
+		left := int(math.Ceil(m.closeAt.Sub(m.now).Seconds()))
+		parts = append(parts, faint.Render(fmt.Sprintf(" closing in %ds, any key to stay", max(left, 0))))
 	}
 	return lipgloss.NewStyle().Height(m.paneHeight()).Render(lipgloss.JoinVertical(lipgloss.Left, parts...))
 }

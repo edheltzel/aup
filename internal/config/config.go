@@ -23,6 +23,14 @@ type Step struct {
 	Timeout     time.Duration
 }
 
+type Config struct {
+	Steps      []Step
+	AutoClose  bool
+	CloseAfter time.Duration
+}
+
+const DefaultCloseAfter = 10 * time.Second
+
 type RowError struct {
 	Table string
 	Row   int
@@ -55,15 +63,30 @@ func Path(flag, home string) string {
 	return current
 }
 
-func Load(path string) (steps []Step, bad []RowError, err error) {
+func Load(path string) (cfg Config, bad []RowError, err error) {
 	var doc map[string]any
 	if _, err := toml.DecodeFile(path, &doc); err != nil {
-		return nil, nil, err
+		return cfg, nil, err
+	}
+	cfg.CloseAfter = DefaultCloseAfter
+	switch v := doc["auto_close"].(type) {
+	case nil:
+	case bool:
+		cfg.AutoClose = v
+	default:
+		return cfg, nil, errors.New("auto_close must be true or false")
+	}
+	if v, ok := doc["close_after"]; ok {
+		d, err := time.ParseDuration(field(v))
+		if err != nil || d < 0 {
+			return cfg, nil, errors.New("close_after must be a duration like \"10s\", or \"0s\" to wait for Enter")
+		}
+		cfg.CloseAfter = d
 	}
 	for _, table := range tables {
 		rows, ok := doc[table].([]map[string]any)
 		if !ok && doc[table] != nil {
-			return nil, nil, errors.New(table + " must be an array of tables")
+			return cfg, nil, errors.New(table + " must be an array of tables")
 		}
 		for i, row := range rows {
 			s, msg := parse(row)
@@ -71,10 +94,10 @@ func Load(path string) (steps []Step, bad []RowError, err error) {
 				bad = append(bad, RowError{table, i + 1, msg})
 				continue
 			}
-			steps = append(steps, s)
+			cfg.Steps = append(cfg.Steps, s)
 		}
 	}
-	return steps, bad, nil
+	return cfg, bad, nil
 }
 
 func parse(row map[string]any) (Step, string) {
