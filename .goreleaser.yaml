@@ -44,15 +44,13 @@ homebrew_casks:
     homepage: https://github.com/edheltzel/aup
     description: Update every installed agent harness in one run, with a live TUI
     generate_completions_from_executable:
-      args:
-        - completion
       shell_parameter_format: cobra
       shells:
         - bash
         - zsh
         - fish
     hooks:
-      post:
+      pre:
         install_steps: |
           on_macos do
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/aup"]
