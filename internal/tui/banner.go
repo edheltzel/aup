@@ -10,14 +10,14 @@ import (
 // The wordmark is a 4-row block-letter "aup". While a run is in progress a
 // colour sweep travels across it, one column per spinner frame.
 var wordmark = []string{
-	"  ▄▄   █ █  ▄▄▄ ",
-	" █▄▄█  █ █  █ █ ",
-	" █  █  █ █  █▄█ ",
-	" ▀▀▀▀  ▀▀▀  ▀   ",
+	"▄▄▄▄▄▄▄ ▄     ▄ ▄▄▄▄▄▄▄",
+	"▓     ▓ ▓     ▓ ▓     ▓",
+	"▒▀▀▀▀▀▒ ▒     ▒ ▒ ▀▀▀▀▀",
+	"░     ░ ░▄▄▄▄▄░ ░      ",
 }
 
 const (
-	bannerCols = 17
+	bannerCols = 23
 	bannerRows = 4
 )
 
