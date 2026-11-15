@@ -113,6 +113,36 @@ func TestKeysCancelStepAndQuit(t *testing.T) {
 	}
 }
 
+func TestEscapeAsksThenCancelsTheStep(t *testing.T) {
+	var cancelled, aborted int
+	m := New(fixedPlan(), Options{CancelStep: func() { cancelled++ }, Abort: func() { aborted++ }})
+	step(m, tea.WindowSizeMsg{Width: 100, Height: 20}, StartedMsg{I: 1})
+	if cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEscape}); cmd != nil || cancelled != 0 || !m.asking {
+		t.Fatalf("escape did not open the prompt: cancelled=%d asking=%v", cancelled, m.asking)
+	}
+	if v := ansi.Strip(m.render()); !strings.Contains(v, "Cancel Claude Code") || !strings.Contains(v, "Stop the whole run") {
+		t.Fatalf("prompt text:\n%s", v)
+	}
+	if cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEscape}); cmd != nil || m.asking {
+		t.Fatal("escape again did not dismiss the prompt")
+	}
+	m.key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || cancelled != 1 || aborted != 0 || m.asking {
+		t.Fatalf("enter did not cancel the step: cancelled=%d aborted=%d asking=%v", cancelled, aborted, m.asking)
+	}
+}
+
+func TestEscapeAsksThenStopsTheRun(t *testing.T) {
+	var cancelled, aborted int
+	m := New(fixedPlan(), Options{CancelStep: func() { cancelled++ }, Abort: func() { aborted++ }})
+	step(m, tea.WindowSizeMsg{Width: 100, Height: 20}, StartedMsg{I: 0})
+	m.key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m.key(tea.KeyPressMsg{Code: tea.KeyDown})
+	if cmd := m.key(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil || aborted != 1 || cancelled != 0 || !m.quitting {
+		t.Fatalf("down+enter did not stop the run: aborted=%d cancelled=%d quitting=%v", aborted, cancelled, m.quitting)
+	}
+}
+
 func TestSummaryClosesOnEnter(t *testing.T) {
 	m := New(fixedPlan(), Options{})
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 24))
