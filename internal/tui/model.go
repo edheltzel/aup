@@ -79,19 +79,20 @@ type Options struct {
 }
 
 type Model struct {
-	opts                   Options
-	rows                   []row
-	tasks                  int
-	sel, current           int
-	follow, done, quitting bool
-	width, height          int
-	start, now, closeAt    time.Time
-	spin                   spinner.Model
-	frame                  int
-	bar                    progress.Model
-	vp                     viewport.Model
-	help                   help.Model
-	keys                   keyMap
+	opts                           Options
+	rows                           []row
+	tasks                          int
+	sel, current                   int
+	follow, done, quitting, asking bool
+	choice                         int
+	width, height                  int
+	start, now, closeAt            time.Time
+	spin                           spinner.Model
+	frame                          int
+	bar                            progress.Model
+	vp                             viewport.Model
+	help                           help.Model
+	keys                           keyMap
 }
 
 func New(plan runner.Plan, opts Options) *Model {
@@ -207,6 +208,19 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 	}
+	if !m.done && key.Matches(msg, m.keys.Close) && msg.String() == "esc" {
+		if m.asking {
+			m.asking = false
+			return nil
+		}
+		if m.current >= 0 {
+			m.asking, m.choice = true, 0
+		}
+		return nil
+	}
+	if m.asking {
+		return m.answer(msg)
+	}
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
 		if m.current >= 0 && m.opts.CancelStep != nil {
@@ -234,6 +248,28 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		var cmd tea.Cmd
 		m.vp, cmd = m.vp.Update(msg)
 		return cmd
+	}
+	return nil
+}
+
+func (m *Model) answer(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "up", "k":
+		m.choice = 0
+	case "down", "j":
+		m.choice = 1
+	case "enter":
+		m.asking = false
+		if m.choice == 1 {
+			m.quitting = true
+			if m.opts.Abort != nil {
+				m.opts.Abort()
+			}
+			return nil
+		}
+		if m.opts.CancelStep != nil {
+			m.opts.CancelStep()
+		}
 	}
 	return nil
 }
@@ -330,9 +366,12 @@ func (m *Model) render() string {
 	gap := max(m.width-lipgloss.Width(title)-lipgloss.Width(stat), 1)
 	header := lipgloss.JoinHorizontal(lipgloss.Top, title, strings.Repeat(" ", gap), faint.Render(stat))
 	var body string
-	if m.done {
+	switch {
+	case m.done:
 		body = m.summary(ok, bad)
-	} else {
+	case m.asking:
+		body = m.prompt()
+	default:
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.list(), m.output())
 	}
 	pct := 1.0
@@ -341,10 +380,31 @@ func (m *Model) render() string {
 	}
 	bar := " " + m.bar.ViewAs(pct) + fmt.Sprintf(" %3.0f%%", pct*100)
 	keys := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Follow, m.keys.Cancel, m.keys.Quit}
-	if m.done {
+	switch {
+	case m.done:
 		keys = []key.Binding{m.keys.Close}
+	case m.asking:
+		keys = nil
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, bar, " "+m.help.ShortHelpView(keys))
+}
+
+func (m *Model) prompt() string {
+	label := m.rows[m.current].label
+	options := []string{"Cancel " + label, "Stop the whole run"}
+	var lines []string
+	lines = append(lines, " "+label+" is still running.")
+	lines = append(lines, "")
+	for i, o := range options {
+		mark := "  "
+		if i == m.choice {
+			mark = selected.Render("\u258c ")
+		}
+		lines = append(lines, mark+o)
+	}
+	lines = append(lines, "", faint.Render(" enter to choose, esc to go back"))
+	box := pane.Render(strings.Join(lines, "\n"))
+	return lipgloss.Place(m.width, m.paneHeight(), lipgloss.Center, lipgloss.Center, box)
 }
 
 func (m *Model) list() string {
