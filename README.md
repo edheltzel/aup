@@ -45,7 +45,7 @@ aup --dry-run       # show what would run
 aup --config path   # another config file
 ```
 
-TUI keys: `j`/`k` select a step, `f` follow the running step, `ctrl+c` cancel the running step, `q` stop and quit, `enter` close the summary.
+TUI keys: `j`/`k` select a step, `f` follow the running step, `esc` ask whether to cancel the running step or stop the whole run, `ctrl+c` cancel the running step, `q` stop and quit, `enter` close the summary.
 
 ## Config
 

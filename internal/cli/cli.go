@@ -112,8 +112,16 @@ func execute(ctx context.Context, o options, stdin io.Reader, stdout, stderr io.
 	}
 	runner.ExtendPath(knownDirs(home))
 	path := config.Path(o.config, home)
+	raw, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		fmt.Fprintf(stderr, "aup: reading config: %s\n", err)
+		return 1
+	}
 	cfg, bad, err := config.Load(path)
 	steps := cfg.Steps
+	for _, s := range config.Suggestions(path, raw, bad) {
+		fmt.Fprintln(stderr, "hint:", s)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "aup: bad config %s: %v\n", path, err)
 		return 1
@@ -152,8 +160,7 @@ func openLog(path string, stderr io.Writer) *os.File {
 func runPlain(ctx context.Context, o options, plan runner.Plan, bad []config.RowError, logf *os.File, stdin io.Reader, stdout, stderr io.Writer, color bool) int {
 	p := &plain.Printer{Out: stdout, ErrOut: stderr, Stdin: stdin, Direct: isTTY(stdout), Color: color}
 	if logf != nil {
-		strip := plain.Stripper{W: logf}
-		p.Out, p.ErrOut, p.Log = io.MultiWriter(stdout, strip), io.MultiWriter(stderr, strip), logf
+		p.Out, p.ErrOut, p.Log = io.MultiWriter(stdout, &plain.Stripper{W: logf}), io.MultiWriter(stderr, &plain.Stripper{W: logf}), logf
 	}
 	p.ChildOut, p.ChildErr = p.Out, p.ErrOut
 	if p.Direct {
@@ -170,7 +177,7 @@ func runPlain(ctx context.Context, o options, plan runner.Plan, bad []config.Row
 func runTUI(ctx context.Context, o options, cfg config.Config, plan runner.Plan, bad []config.RowError, logf *os.File, logPath string, stdin io.Reader, stdout, stderr io.Writer, color bool) int {
 	var logOut io.Writer = io.Discard
 	if logf != nil {
-		logOut = plain.Stripper{W: logf}
+		logOut = &plain.Stripper{W: logf}
 	}
 	logger := &plain.Printer{Out: logOut, ErrOut: logOut, ChildOut: logOut, ChildErr: logOut}
 	logger.Begin(plan, bad)

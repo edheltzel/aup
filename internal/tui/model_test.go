@@ -143,6 +143,22 @@ func TestEscapeAsksThenStopsTheRun(t *testing.T) {
 	}
 }
 
+func TestPromptClosesWhenItsStepEnds(t *testing.T) {
+	var cancelled int
+	m := New(fixedPlan(), Options{CancelStep: func() { cancelled++ }})
+	step(m, tea.WindowSizeMsg{Width: 100, Height: 20}, StartedMsg{I: 1})
+	m.key(tea.KeyPressMsg{Code: tea.KeyEscape})
+	step(m, DoneMsg{I: 1})
+	if v := ansi.Strip(m.render()); m.asking || strings.Contains(v, "still running") {
+		t.Fatalf("prompt stayed open after its step ended:\n%s", v)
+	}
+	step(m, StartedMsg{I: 2})
+	m.key(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cancelled != 0 {
+		t.Fatal("enter cancelled a step the prompt was not opened for")
+	}
+}
+
 func TestSummaryClosesOnEnter(t *testing.T) {
 	m := New(fixedPlan(), Options{})
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 24))
@@ -226,7 +242,7 @@ func script(t *testing.T, body string) string {
 }
 
 func bridge(rec *recorder, log *bytes.Buffer) *Bridge {
-	out := plain.Stripper{W: log}
+	out := &plain.Stripper{W: log}
 	return &Bridge{Program: rec, Log: &plain.Printer{Out: out, ErrOut: out, ChildOut: out, ChildErr: out}, LogOut: out, Size: &Size{}}
 }
 

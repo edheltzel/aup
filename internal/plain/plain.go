@@ -1,6 +1,7 @@
 package plain
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os/exec"
@@ -12,12 +13,27 @@ import (
 	"github.com/edheltzel/aup/internal/runner"
 )
 
-var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()*+][0-9A-Za-z]|\x1b[^\[\]()*+]`)
 
-type Stripper struct{ W io.Writer }
+const maxHeld = 1024
 
-func (s Stripper) Write(p []byte) (int, error) {
-	if _, err := s.W.Write(ansiRe.ReplaceAll(p, nil)); err != nil {
+type Stripper struct {
+	W    io.Writer
+	held []byte
+}
+
+func (s *Stripper) Write(p []byte) (int, error) {
+	out := ansiRe.ReplaceAll(append(s.held, p...), nil)
+	s.held = nil
+	if i := bytes.IndexByte(out, 0x1b); i >= 0 {
+		if len(out)-i <= maxHeld {
+			s.held = append([]byte(nil), out[i:]...)
+			out = out[:i]
+		} else {
+			out = bytes.ReplaceAll(out, []byte{0x1b}, nil)
+		}
+	}
+	if _, err := s.W.Write(out); err != nil {
 		return 0, err
 	}
 	return len(p), nil
@@ -95,10 +111,7 @@ func (p *Printer) Done(_ int, t runner.Task, r runner.Result) {
 		fmt.Fprint(p.Out, p.Paint("31", r.Change(t.Label)+"\n"))
 		return
 	}
-	msg := t.Label + " updated."
-	if r.After != "" {
-		msg = fmt.Sprintf("%s updated to v%s.", t.Label, r.After)
-	}
+	msg := r.Change(t.Label)
 	fmt.Fprint(p.Out, p.Paint(RGB(t.Color), msg+"\n"))
 }
 
