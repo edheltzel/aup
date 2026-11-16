@@ -111,7 +111,7 @@ func (s *screen) newline() {
 	s.lines = append(s.lines, s.cur.String())
 	s.cur.Reset()
 	if over := len(s.lines) - maxLines; over > 0 {
-		s.lines = append([]string(nil), s.lines[over:]...)
+		s.lines = s.lines[over:]
 	}
 }
 

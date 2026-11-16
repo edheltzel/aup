@@ -162,7 +162,7 @@ func (r Result) Change(label string) string {
 	}
 }
 
-type Exec func(ctx context.Context, cmd *exec.Cmd, t Task) error
+type Exec func(ctx context.Context, cmd *exec.Cmd) error
 
 type Sink interface {
 	Started(i int, t Task)
@@ -179,12 +179,7 @@ type Runner struct {
 	DryRun bool
 }
 
-func Direct(ctx context.Context, cmd *exec.Cmd, _ Task) error {
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	return cmd.Wait()
-}
+func Direct(_ context.Context, cmd *exec.Cmd) error { return cmd.Run() }
 
 func (r *Runner) Run(ctx context.Context, plan Plan, sink Sink) Summary {
 	s := Summary{Skipped: len(plan.Missing), Results: make([]Result, len(plan.Tasks))}
@@ -214,7 +209,7 @@ func (r *Runner) step(ctx context.Context, i int, t Task, sink Sink) Result {
 		return Result{Dry: true}
 	}
 	res := Result{Before: ProbeVersion(t.Version)}
-	stepCtx, cancel := context.WithCancel(ctx)
+	stepCtx, cancel := ctx, context.CancelFunc(func() {})
 	if t.Timeout > 0 {
 		stepCtx, cancel = context.WithTimeout(ctx, t.Timeout)
 	}
@@ -231,17 +226,14 @@ func (r *Runner) step(ctx context.Context, i int, t Task, sink Sink) Result {
 	if run == nil {
 		run = Direct
 	}
-	err := run(stepCtx, cmd, t)
+	err := run(stepCtx, cmd)
 	var ee *exec.ExitError
 	switch {
 	case err == nil:
-	case errors.Is(err, ErrCancelled):
+	case !errors.Is(err, ErrCancelled) && errors.Is(stepCtx.Err(), context.DeadlineExceeded):
+		res.Code, res.Err = 124, fmt.Errorf("timed out after %s", t.Timeout)
+	case errors.Is(err, ErrCancelled) || stepCtx.Err() != nil:
 		res.Code, res.Cancelled = 130, true
-	case stepCtx.Err() != nil:
-		res.Code, res.Cancelled = 130, true
-		if errors.Is(stepCtx.Err(), context.DeadlineExceeded) {
-			res.Code, res.Cancelled, res.Err = 124, false, fmt.Errorf("timed out after %s", t.Timeout)
-		}
 	case errors.As(err, &ee):
 		res.Code = ee.ExitCode()
 	default:

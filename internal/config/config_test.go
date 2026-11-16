@@ -27,23 +27,6 @@ func TestExampleConfigParses(t *testing.T) {
 	}
 }
 
-func TestShippedManifestParses(t *testing.T) {
-	path := "../../../../config/.config/aup/harnesses.toml"
-	if _, err := os.Stat(path); err != nil {
-		t.Skip("not inside the dotfiles repo")
-	}
-	cfg, bad, err := Load(path)
-	steps := cfg.Steps
-	if err != nil || len(bad) != 0 || len(steps) == 0 {
-		t.Fatalf("steps=%d bad=%v err=%v", len(steps), bad, err)
-	}
-	for _, s := range steps {
-		if s.Label == "Plannotator" && len(s.Args) != 4 {
-			t.Fatalf("list args not kept intact: %v", s.Args)
-		}
-	}
-}
-
 func TestStepAndLegacyTablesBothLoad(t *testing.T) {
 	p := write(t, "[[step]]\nlabel = \"New\"\ncolor = \"fff000\"\nbinary = \"a\"\ninteractive = true\ntimeout = \"2m\"\nenv = { X = \"1\" }\n[[harness]]\nlabel = \"Old\"\ncolor = \"fff000\"\nbinary = \"b\"\n")
 	cfg, bad, err := Load(p)

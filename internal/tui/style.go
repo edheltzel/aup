@@ -15,10 +15,11 @@ var (
 	badStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B8B"))
 	warn        = lipgloss.NewStyle().Foreground(lipgloss.Color("#F2C55C"))
 	faint       = lipgloss.NewStyle().Foreground(lipgloss.Color("#7A7F99"))
-	borderStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#4A4E69"))
+	border      = lipgloss.Color("#4A4E69")
+	borderStyle = lipgloss.NewStyle().Foreground(border)
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1E1E2E")).Background(accent)
 	selected    = lipgloss.NewStyle().Foreground(accent)
-	pane        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4A4E69")).Padding(0, 1)
+	pane        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1)
 )
 
 func hex(s string) color.Color {

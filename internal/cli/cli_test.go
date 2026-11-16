@@ -41,7 +41,7 @@ func fake(t *testing.T, dir, name, script string) {
 
 func manifest(t *testing.T, body string) string {
 	t.Helper()
-	p := filepath.Join(t.TempDir(), "harnesses.toml")
+	p := filepath.Join(t.TempDir(), "steps.toml")
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestFailureDoesNotStopLaterSteps(t *testing.T) {
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("later step did not run: %q", out)
 	}
-	if code != 1 || !strings.Contains(out, "Bad update failed (exit 3).") || !strings.Contains(out, "Good updated to v1.2.3.") {
+	if code != 1 || !strings.Contains(out, "Bad update failed (exit 3).") || !strings.Contains(out, "Good already at v1.2.3.") {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
 }
@@ -166,7 +166,7 @@ func TestLogFileTeesOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"hello-from-child", "oops", "Good updated."} {
+	for _, want := range []string{"hello-from-child", "oops", "Good ran (no version to compare)."} {
 		if !strings.Contains(string(log), want) || !strings.Contains(out, want) {
 			t.Fatalf("%q missing\nlog=%q\nout=%q", want, log, out)
 		}
@@ -223,7 +223,7 @@ func TestLogHasNoColourCodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "\x1b[") || strings.Contains(string(log), "\x1b") || !strings.Contains(string(log), "Good updated.") {
+	if !strings.Contains(out, "\x1b[") || strings.Contains(string(log), "\x1b") || !strings.Contains(string(log), "Good ran (no version to compare).") {
 		t.Fatalf("out=%q log=%q", out, log)
 	}
 }
@@ -248,7 +248,7 @@ func TestKnownDirsAreOnPath(t *testing.T) {
 	knownDirs = func(string) []string { return []string{extra} }
 	fake(t, extra, "aup-extra", "echo ok")
 	out, code := aup(t, "--manifest", manifest(t, entry("Extra", "aup-extra", "x")))
-	if code != 0 || !strings.Contains(out, "Extra updated.") {
+	if code != 0 || !strings.Contains(out, "Extra ran (no version to compare).") {
 		t.Fatalf("code=%d out=%q home=%s", code, out, e.home)
 	}
 }
@@ -291,7 +291,7 @@ func TestBadRowFailsRunButOthersContinue(t *testing.T) {
 	fake(t, e.bin, "aup-good", "echo ran")
 	m := manifest(t, "[[harness]]\nlabel = \"NoColor\"\nbinary = \"x\"\n"+entry("Good", "aup-good", "x"))
 	out, code := aup(t, "--manifest", m)
-	if code != 1 || !strings.Contains(out, "harness 1: missing color") || !strings.Contains(out, "Good updated.") {
+	if code != 1 || !strings.Contains(out, "harness 1: missing color") || !strings.Contains(out, "Good ran (no version to compare).") {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
 }
@@ -319,6 +319,16 @@ func TestReportShowsVersionChange(t *testing.T) {
 	}
 }
 
+func TestTypoIsReportedOnStderr(t *testing.T) {
+	e := setup(t)
+	fake(t, e.bin, "aup-good", "echo ran")
+	m := manifest(t, entry("Good", "aup-good", "x")+"timout = \"5s\"\n")
+	out, code := aup(t, "--config", m)
+	if code != 0 || !strings.Contains(out, `did you mean "timeout"`) {
+		t.Fatalf("code=%d out=%q", code, out)
+	}
+}
+
 func TestBadFlagExitsTwo(t *testing.T) {
 	setup(t)
 	if out, code := aup(t, "--bogus"); code != 2 || !strings.Contains(out, "unknown flag") {
@@ -331,7 +341,7 @@ func TestConfigFlagAndStepTables(t *testing.T) {
 	fake(t, e.bin, "aup-good", "echo ran-step")
 	m := manifest(t, "[[step]]\nlabel = \"Good\"\ncolor = \"B392D7\"\nbinary = \"aup-good\"\nargs = [\"x\"]\n")
 	out, code := aup(t, "--config", m)
-	if code != 0 || !strings.Contains(out, "ran-step") || !strings.Contains(out, "Good updated.") {
+	if code != 0 || !strings.Contains(out, "ran-step") || !strings.Contains(out, "Good ran (no version to compare).") {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
 }

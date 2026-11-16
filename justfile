@@ -15,9 +15,15 @@ uninstall:
     rm -f "{{bin_dir}}/aup"
     @echo "removed {{bin_dir}}/aup"
 
-# pull master and reinstall
+# pull master and reinstall. GitButler repos update through but; plain git repos fast-forward.
 update:
-    git pull --ff-only
+    #!/usr/bin/env sh
+    set -eu
+    if but status >/dev/null 2>&1; then
+        but pull
+    else
+        git pull --ff-only
+    fi
     just install
 
 # vet and run every test

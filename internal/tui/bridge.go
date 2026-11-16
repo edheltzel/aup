@@ -39,7 +39,7 @@ func (b *Bridge) Command(i int, t runner.Task, cmd *exec.Cmd) runner.Exec {
 	if t.Interactive {
 		return b.interactive
 	}
-	return func(ctx context.Context, cmd *exec.Cmd, _ runner.Task) error { return b.pty(ctx, i, cmd) }
+	return func(ctx context.Context, cmd *exec.Cmd) error { return b.pty(ctx, i, cmd) }
 }
 
 func (b *Bridge) Done(i int, t runner.Task, r runner.Result) {
@@ -61,7 +61,7 @@ func (b *Bridge) setKill(f func()) {
 	b.mu.Unlock()
 }
 
-func (b *Bridge) interactive(_ context.Context, cmd *exec.Cmd, _ runner.Task) error {
+func (b *Bridge) interactive(_ context.Context, cmd *exec.Cmd) error {
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	ch := make(chan error, 1)
 	b.Program.Send(execMsg{cmd: cmd, result: ch})

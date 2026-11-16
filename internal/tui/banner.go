@@ -1,14 +1,11 @@
 package tui
 
 import (
-	"image/color"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 )
 
-// The wordmark is a 4-row block-letter "aup". While a run is in progress a
-// colour sweep travels across it, one column per spinner frame.
 var wordmark = []string{
 	"▄▄▄▄▄▄▄ ▄     ▄ ▄▄▄▄▄▄▄",
 	"▓     ▓ ▓     ▓ ▓     ▓",
@@ -21,17 +18,22 @@ const (
 	bannerRows = 4
 )
 
-var bannerPalette = []color.Color{
-	lipgloss.Color("#6E5A9A"),
-	lipgloss.Color("#B392D7"),
-	lipgloss.Color("#E8D6FF"),
-	lipgloss.Color("#5FD7A7"),
-	lipgloss.Color("#B392D7"),
-	lipgloss.Color("#6E5A9A"),
-}
+var bannerStyles = func() []lipgloss.Style {
+	styles := make([]lipgloss.Style, bannerCols)
+	for i, c := range lipgloss.Blend1D(bannerCols,
+		lipgloss.Color("#6E5A9A"),
+		accent,
+		lipgloss.Color("#E8D6FF"),
+		done,
+		accent,
+		lipgloss.Color("#6E5A9A"),
+	) {
+		styles[i] = lipgloss.NewStyle().Foreground(c)
+	}
+	return styles
+}()
 
-func banner(frame int, live bool) string {
-	colours := lipgloss.Blend1D(bannerCols, bannerPalette...)
+func banner(frame int) string {
 	var lines []string
 	for y, row := range wordmark {
 		var b strings.Builder
@@ -40,11 +42,7 @@ func banner(frame int, live bool) string {
 				b.WriteRune(' ')
 				continue
 			}
-			i := x
-			if live {
-				i = (x + frame) % bannerCols
-			}
-			b.WriteString(lipgloss.NewStyle().Foreground(colours[i]).Render(string(r)))
+			b.WriteString(bannerStyles[(x+frame)%bannerCols].Render(string(r)))
 		}
 		if y == 0 {
 			b.WriteString("  " + faint.Render("agent harness updater"))

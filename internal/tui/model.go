@@ -8,7 +8,6 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -54,7 +53,7 @@ type row struct {
 }
 
 type keyMap struct {
-	Up, Down, Follow, Cancel, Quit, Close key.Binding
+	Up, Down, Follow, Ask, Cancel, Quit, Close key.Binding
 }
 
 func newKeys() keyMap {
@@ -62,6 +61,7 @@ func newKeys() keyMap {
 		Up:     key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/\u2191", "prev step")),
 		Down:   key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/\u2193", "next step")),
 		Follow: key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "follow")),
+		Ask:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel or stop")),
 		Cancel: key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "cancel step")),
 		Quit:   key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit")),
 		Close:  key.NewBinding(key.WithKeys("q", "enter", "esc", "ctrl+c"), key.WithHelp("enter", "close")),
@@ -89,7 +89,6 @@ type Model struct {
 	start, now, closeAt            time.Time
 	spin                           spinner.Model
 	frame                          int
-	bar                            progress.Model
 	vp                             viewport.Model
 	help                           help.Model
 	keys                           keyMap
@@ -107,7 +106,6 @@ func New(plan runner.Plan, opts Options) *Model {
 		width:   100,
 		height:  30,
 		spin:    spinner.New(spinner.WithSpinner(spinner.MiniDot), spinner.WithStyle(lipgloss.NewStyle().Foreground(accent))),
-		bar:     progress.New(progress.WithColors(accent, done), progress.WithoutPercentage()),
 		vp:      viewport.New(),
 		help:    help.New(),
 		keys:    newKeys(),
@@ -174,7 +172,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			r.status = failed
 		}
 		if m.current == msg.I {
-			m.current = -1
+			m.current, m.asking = -1, false
 		}
 		m.refresh()
 	case FinishedMsg:
@@ -183,7 +181,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.quitting || m.opts.AutoClose {
 			return m, tea.Quit
 		}
-		if _, bad, _, _ := m.counts(); bad == 0 && m.opts.CloseAfter > 0 {
+		if _, bad, _ := m.counts(); bad == 0 && m.opts.CloseAfter > 0 {
 			m.closeAt = m.now.Add(m.opts.CloseAfter)
 		}
 		m.layout()
@@ -203,25 +201,18 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		if key.Matches(msg, m.keys.Close) {
 			return tea.Quit
 		}
-		if !m.closeAt.IsZero() {
-			m.closeAt = time.Time{}
-			return nil
-		}
-	}
-	if !m.done && key.Matches(msg, m.keys.Close) && msg.String() == "esc" {
-		if m.asking {
-			m.asking = false
-			return nil
-		}
-		if m.current >= 0 {
-			m.asking, m.choice = true, 0
-		}
+		m.closeAt = time.Time{}
 		return nil
 	}
 	if m.asking {
-		return m.answer(msg)
+		m.answer(msg)
+		return nil
 	}
 	switch {
+	case key.Matches(msg, m.keys.Ask):
+		if m.current >= 0 {
+			m.asking, m.choice = true, 0
+		}
 	case key.Matches(msg, m.keys.Cancel):
 		if m.current >= 0 && m.opts.CancelStep != nil {
 			m.opts.CancelStep()
@@ -230,9 +221,6 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 		m.quitting = true
 		if m.opts.Abort != nil {
 			m.opts.Abort()
-		}
-		if m.done {
-			return tea.Quit
 		}
 	case key.Matches(msg, m.keys.Up):
 		m.move(-1)
@@ -252,12 +240,14 @@ func (m *Model) key(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) answer(msg tea.KeyPressMsg) tea.Cmd {
+func (m *Model) answer(msg tea.KeyPressMsg) {
 	switch msg.String() {
 	case "up", "k":
 		m.choice = 0
 	case "down", "j":
 		m.choice = 1
+	case "esc":
+		m.asking = false
 	case "enter":
 		m.asking = false
 		if m.choice == 1 {
@@ -265,13 +255,12 @@ func (m *Model) answer(msg tea.KeyPressMsg) tea.Cmd {
 			if m.opts.Abort != nil {
 				m.opts.Abort()
 			}
-			return nil
+			return
 		}
 		if m.opts.CancelStep != nil {
 			m.opts.CancelStep()
 		}
 	}
-	return nil
 }
 
 func (m *Model) move(d int) {
@@ -304,7 +293,6 @@ func (m *Model) layout() {
 	right := max(m.width-m.listWidth()-4, 10)
 	m.vp.SetWidth(right)
 	m.vp.SetHeight(body)
-	m.bar.SetWidth(max(m.width-8, 10))
 	if m.opts.Size != nil {
 		m.opts.Size.Set(body, right)
 	}
@@ -334,7 +322,7 @@ func (m *Model) refresh() {
 	}
 }
 
-func (m *Model) counts() (ok, bad, skip, finished int) {
+func (m *Model) counts() (ok, bad, skip int) {
 	for _, r := range m.rows {
 		switch r.status {
 		case succeeded:
@@ -345,7 +333,7 @@ func (m *Model) counts() (ok, bad, skip, finished int) {
 			skip++
 		}
 	}
-	return ok, bad, skip, ok + bad
+	return ok, bad, skip
 }
 
 func (m *Model) View() tea.View {
@@ -356,11 +344,12 @@ func (m *Model) View() tea.View {
 }
 
 func (m *Model) render() string {
-	ok, bad, _, finished := m.counts()
+	ok, bad, skip := m.counts()
+	finished := ok + bad
 	elapsed := m.now.Sub(m.start).Round(time.Second)
 	title := titleStyle.Render(" aup ") + " " + faint.Render("agent harness updater")
 	if !m.done {
-		title = banner(m.frame, true)
+		title = banner(m.frame)
 	}
 	stat := fmt.Sprintf("%d/%d  %s", finished, m.tasks, clock(elapsed))
 	gap := max(m.width-lipgloss.Width(title)-lipgloss.Width(stat), 1)
@@ -368,7 +357,7 @@ func (m *Model) render() string {
 	var body string
 	switch {
 	case m.done:
-		body = m.summary(ok, bad)
+		body = m.summary(ok, bad, skip)
 	case m.asking:
 		body = m.prompt()
 	default:
@@ -378,8 +367,8 @@ func (m *Model) render() string {
 	if m.tasks > 0 {
 		pct = float64(finished) / float64(m.tasks)
 	}
-	bar := " " + m.bar.ViewAs(pct) + fmt.Sprintf(" %3.0f%%", pct*100)
-	keys := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Follow, m.keys.Cancel, m.keys.Quit}
+	bar := m.meter(pct)
+	keys := []key.Binding{m.keys.Up, m.keys.Down, m.keys.Follow, m.keys.Ask, m.keys.Cancel, m.keys.Quit}
 	switch {
 	case m.done:
 		keys = []key.Binding{m.keys.Close}
@@ -389,12 +378,26 @@ func (m *Model) render() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, bar, " "+m.help.ShortHelpView(keys))
 }
 
+func (m *Model) meter(pct float64) string {
+	filled := int(math.Round(float64(m.width-8) * pct))
+	cells := lipgloss.Blend1D(max(filled, 1), lipgloss.Color("#6E5A9A"), accent, done)
+	var b strings.Builder
+	b.WriteString(" ")
+	for i := range m.width - 8 {
+		ch := "░"
+		if i < filled {
+			ch = lipgloss.NewStyle().Foreground(cells[i]).Render("━")
+		}
+		b.WriteString(ch)
+	}
+	b.WriteString(faint.Render(fmt.Sprintf(" %3.0f%%", pct*100)))
+	return b.String()
+}
+
 func (m *Model) prompt() string {
 	label := m.rows[m.current].label
 	options := []string{"Cancel " + label, "Stop the whole run"}
-	var lines []string
-	lines = append(lines, " "+label+" is still running.")
-	lines = append(lines, "")
+	lines := []string{" " + label + " is still running.", ""}
 	for i, o := range options {
 		mark := "  "
 		if i == m.choice {
@@ -461,7 +464,7 @@ func (m *Model) output() string {
 	return pane.Width(m.vp.Width() + 4).Height(m.paneHeight()).Render(title + "\n" + m.vp.View())
 }
 
-func (m *Model) summary(ok, bad int) string {
+func (m *Model) summary(ok, bad, skip int) string {
 	t := table.New().Border(lipgloss.RoundedBorder()).BorderStyle(borderStyle).Headers("Step", "Result", "Version").
 		StyleFunc(func(row, _ int) lipgloss.Style {
 			if row == table.HeaderRow {
@@ -493,7 +496,6 @@ func (m *Model) summary(ok, bad int) string {
 		}
 		t.Row(lipgloss.NewStyle().Foreground(hex(r.color)).Render(r.label), res, ver)
 	}
-	_, _, skip, _ := m.counts()
 	line := fmt.Sprintf("%d updated, %d failed, %d skipped.", ok, bad, skip)
 	if bad > 0 {
 		line = badStyle.Render(line)
